@@ -1,10 +1,14 @@
 
 var defaultPrefix = "!";
 var serverSetupCommandName = "greedsetup";
+var firstScoreDefaultThreshold = 500;
+var maxScoreDefaultThreshold = 5000;
 
 module.exports = {
     defaultPrefix: defaultPrefix,
     serverSetupCommandName: serverSetupCommandName,
+    firstScoreDefaultThreshold: firstScoreDefaultThreshold,
+    maxScoreDefaultThreshold: maxScoreDefaultThreshold,
 
     parseServerSetupCommand: function(args) {
         var resultObj = {

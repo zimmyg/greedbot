@@ -33,10 +33,69 @@ var diceMap = Object.freeze({
     }
 });
 
+var scoreList = [
+    {
+        name: "Six Of A Kind",
+        score: 5000,
+    },
+    {
+        name: "$GREED",
+        dice: [0, 1, 2, 3, 4, 5],
+        score: 1000
+    },
+    {
+        name: "Three $'s",
+        dice: [0, 0, 0],
+        score: 600
+    },
+    {
+        name: "Three G's",
+        dice: [1, 1, 1],
+        score: 500
+    },
+    {
+        name: "Three R's",
+        dice: [2, 2, 2],
+        score: 400
+    },
+    {
+        name: "Three Green E's",
+        dice: [3, 3, 3],
+        score: 300
+    },
+    {
+        name: "Three Orange E's",
+        dice: [4, 4, 4],
+        score: 300
+    },
+    {
+        name: "Four D's",
+        dice: [5, 5, 5, 5],
+        score: 800
+    },
+    {
+        name: "One D",
+        dice: [5],
+        score: 100
+    },
+    {
+        name: "One G",
+        dice: [1],
+        score: 50
+    },
+
+];
+
 var Game = function (bot, channelID, channelPrefix) {
     this.bot = bot;
     this.channelID = channelID;
     this.channelPrefix = channelPrefix;
+    this.firstScoreThreshold = Common.firstScoreDefaultThreshold;
+    this.maxScoreThreshold = Common.maxScoreDefaultThreshold;
+    this.leaderBoardStats = {
+        totalGamesPlayed: 0,
+        players: {}
+    };
 };
 
 Game.prototype.handleDisconnect = function () {
@@ -63,8 +122,8 @@ Game.prototype.handleMessage = async function(user, userID, message, event) {
         var args = message.substring(this.channelPrefix.length).split(' ');
         var cmd = args[0];
 
-        args = args.splice(1);
-        switch(cmd) {
+            args = args.splice(1);
+                switch(cmd) {
             case 'ping':
                 await this.sendMessage({
                     message: 'Pong!'
@@ -72,35 +131,43 @@ Game.prototype.handleMessage = async function(user, userID, message, event) {
                 break;
 
             case Common.serverSetupCommandName:
-                await this.handleSetupCommand(user, userID, args);
+                await this.handleSetupCommand(user, userID, args, event);
                 break;
 
-            case 'init':
-                await this.handleInitCommand(user, userID, args);
+            case 'start':
+                await this.handleInitCommand(user, userID, args, event);
+                break;
+
+            case 'rules':
+                await this.handleRulesCommand(user, userID, args, event);
+                break;
+
+            case 'board':
+                await this.handleLeaderBoardCommand(user, userID, args, event);
                 break;
 
             case 'quit':
-                await this.handleQuitCommand(user, userID, args);
+                await this.handleQuitCommand(user, userID, args, event);
                 break;
 
             case 'roll':
-                await this.handleRollCommand(user, userID, args);
+                await this.handleRollCommand(user, userID, args, event);
                 break;
 
             case 'hold':
-                await this.handleHoldCommand(user, userID, args);
+                await this.handleHoldCommand(user, userID, args, event);
                 break;
 
             case 'bank':
-                await this.handleBankCommand(user, userID, args);
+                await this.handleBankCommand(user, userID, args, event);
                 break;
 
             case 'score':
-                await this.handleScoreCommand(user, userID, args);
+                await this.handleScoreCommand(user, userID, args, event);
                 break;
 
             case 'order':
-                await this.handleOrderCommand(user, userID, args);
+                await this.handleOrderCommand(user, userID, args, event);
                 break;
         }
 
@@ -111,6 +178,77 @@ Game.prototype.handleMessage = async function(user, userID, message, event) {
             message: "It looks like you're trying to talk to me, but the Greed bot prefix for this channel has been changed. \nPlease prefix all commands with " + this.channelPrefix
         })
     }
+};
+
+
+
+Game.prototype.getPlayerLeaderBoardStats = function(userId) {
+    var stats = this.leaderBoardStats.players[userId];
+    if (!stats) {
+        stats = {
+            id: userId,
+            lifetimeGamesPlayed: 0,
+            lifetimeGamesWon: 0,
+            lifetimeTotalScore: 0
+        };
+        this.leaderBoardStats.players[userId] = stats;
+    }
+
+    return stats;
+};
+
+Game.prototype.updatePlayerLeaderBoard = function(player, wasWinner) {
+    var stats = this.getPlayerLeaderBoardStats(player.id);
+    stats.lifetimeTotalScore += player.totalScore;
+    stats.lifetimeGamesPlayed++;
+    if (wasWinner) {
+        stats.lifetimeGamesWon++;
+    }
+};
+
+Game.prototype.formatLeaderBoardHeaderText = function(totalGamesPlayed) {
+    return "LeaderBoard\n\nTotal Games Played: " + totalGamesPlayed + "\n\nPlayer Stats:\n";
+};
+
+Game.prototype.formatLeaderBoardPlayerStatsText = function(userID, totalPlayed, totalWon, totalScore) {
+    return "<@" + userID + ">\nTotal Games Played: " + totalPlayed
+        + "\nTotal Games Won: " + totalWon
+        + "\nTotalScore: " + totalScore + "\n\n";
+};
+
+Game.prototype.handleLeaderBoardCommand = async function(user, userID, args, event) {
+    var text = this.formatLeaderBoardHeaderText(this.leaderBoardStats.totalGamesPlayed);
+    if (this.leaderBoardStats && this.leaderBoardStats.players) {
+        for (var player of Object.values(this.leaderBoardStats.players)) {
+            text += this.formatLeaderBoardPlayerStatsText(player.id, player.lifetimeGamesPlayed, player.lifetimeGamesWon, player.lifetimeTotalScore);
+        }
+    } else {
+        text = "No games played yet";
+    }
+
+    await this.sendMessage({
+        message: text
+    });
+};
+
+Game.prototype.handleRulesCommand = async function(user, userID, args, event) {
+    var text = "Welcome to Greed! The dice game where you compete against others as well as your own avarice to see who can get the highest score.";
+    text += "\nIn each round, the player whose turn it is gets to roll 6 dice to see what score they can get (see score chart).";
+    text += "\nA player must hold at least one valid score before re-rolling the remaining dice until one of two scenarios occur:";
+    text += "\n\t1. The player does not roll any scoring dice combinations - At this point the player's turn is over and all the points held in this round are lost";
+    text += "\n\t2. The player chooses to bank their current round total and add to their total score for the game - the player's turn is then over";
+    text += "\nIf they player manages to score all six dice  in a round, they get all 6 sice back and can continue playing until one of the above conditions is met.";
+    text += "\nOnce any player banks a score above the threshold of " + this.maxScoreThreshold + ", each player in the turn order after them has one more chance to bring their total above the leading player before the game ends and the person with the highest score is named the winner.";
+    text += "\nUntil a player totals at least " + this.firstScoreThreshold + " points in the current round, they cannot bank their score. Once a player has banked over " + this.firstScoreThreshold + " they are free to bank whatever value they like";
+
+    text += "\n\nScore Chart";
+    for (var score of scoreList) {
+        text += "\n\t" + score.name + " - " + score.score;
+    }
+
+    this.sendMessage({
+        message: text
+    });
 };
 
 Game.prototype.getServerConfig = function() {
@@ -154,6 +292,18 @@ Game.prototype.handleSetupCommand = async function(user, userID, args) {
     });
 };
 
+Game.prototype.printScores = function() {
+    var arrCpy = this.game.players.slice();
+    var sorted = arrCpy.sort((a, b) => {return b.totalScore - a.totalScore}); // sort descending by score
+    var message = "";
+    var index = 1;
+    for (var player of sorted) {
+        message += index++ + ": <@" + player.id + "> - " + player.totalScore + "\n";
+    }
+
+    return message;
+}
+
 Game.prototype.handleScoreCommand = async function(user, userID, args) {
     // call to check the current scores for everyone
     if (!this.checkGameRunning()) {
@@ -163,14 +313,7 @@ Game.prototype.handleScoreCommand = async function(user, userID, args) {
         return false;
     }
 
-    var arrCpy = this.game.players.slice();
-    var sorted = arrCpy.sort((a, b) => {return b.score - a.score}); // sort descending by score
-    var message = "";
-    var index = 1;
-    for (var player of sorted) {
-        message += index + ": <@" + player.id + "> - " + player.totalScore + "\n";
-    }
-
+    var message = this.printScores();
     await this.sendMessage({
         message: message
     });
@@ -194,7 +337,7 @@ Game.prototype.handleOrderCommand = async function(user, userID, args) {
         if (player.order === this.game.currentRound.playerOrder) {
             prefix = suffix = "**";
         }
-        message += prefix + index + ": <@" + player.id + "> " + suffix + "\n";
+        message += prefix + (index++) + ": <@" + player.id + "> " + suffix + "\n";
     }
 
     await this.sendMessage({
@@ -205,7 +348,7 @@ Game.prototype.handleOrderCommand = async function(user, userID, args) {
 Game.prototype.handleQuitCommand = async function(user, userID, args) {
     this.game = null;
     await this.sendMessage({
-        message: "Thank you for playing Greed! Type !init to start a new game"
+        message: "Thank you for playing Greed! Type " + Common.getCommand(this.channelPrefix, "start") + " to start a new game"
     });
 };
 
@@ -217,23 +360,24 @@ Game.prototype.handleBankCommand = async function(user, userID, args) {
 
     var roundScore = this.game.currentRound.totalScore;
     var curPlayer = this.getCurrentPlayerObj();
-    var firstScoreThreshold = 500; // TODO make this config
-    if (curPlayer.totalScore < firstScoreThreshold && roundScore < firstScoreThreshold) {
+    if (curPlayer.totalScore < this.firstScoreThreshold && roundScore < this.firstScoreThreshold) {
         // the user has not scored enough points for their first bank yet, reject the bank and tell them not to be a bitch
-        await this.sendMessage({
-            message: "Cannot bank for the first time until reaching " + firstScoreThreshold + " points. Don't be a bitch, keep rolling!",
-            embed: {
+        var embed;
+        if (this.game.currentRound.currentRoll && this.game.currentRound.currentRoll.length) {
+            embed = {
                 title: "Remaining Dice",
                 fields: this.renderDice(this.game.currentRound.currentRoll)
-            }
-        })
+            };
+        }
+        await this.sendMessage({
+            message: "Cannot bank for the first time until reaching " + this.firstScoreThreshold + " points. Don't be a bitch, keep rolling!",
+            embed: embed
+        });
         return;
     }
 
     this.bankCurrentScore();
 
-    var curPlayer = this.getCurrentPlayerObj();
-    var curUsername = this.getUsername(curPlayer.id);
     await this.sendMessage({
         message: "<@" + curPlayer.id + "> has banked " + roundScore + " points, bringing their total to " + curPlayer.totalScore
     })
@@ -247,26 +391,35 @@ Game.prototype.handleHoldCommand = async function(user, userID, args) {
     }
 
     var parsedHolds = this.parseHolds(args);
-    if (!parsedHolds || !parsedHolds.length) {
-        await this.sendMessage({
-            message: "Invalid holds, please try again",
-            embed: {
+    if (!parsedHolds.holdsList || !parsedHolds.holdsList.length) {
+        var embed;
+        if (this.game.currentRound.currentRoll && this.game.currentRound.currentRoll.length) {
+            embed = {
                 title: "Remaining Dice",
                 fields: this.renderDice(this.game.currentRound.currentRoll)
-            }
+            };
+        }
+
+        await this.sendMessage({
+            message: "Invalid holds, please try again",
+            embed: embed
         });
         return;
     }
 
-    var holdValidation = this.getValidatedHoldScore(parsedHolds);
+    var holdValidation = this.getValidatedHoldScore(parsedHolds.holdsList);
     if (holdValidation.reason) {
         // not valid, we have a reason
-        await this.sendMessage({
-            message: holdValidation.reason,
-            embed: {
+        var embed;
+        if (this.game.currentRound.currentRoll && this.game.currentRound.currentRoll.length) {
+            embed = {
                 title: "Remaining Dice",
                 fields: this.renderDice(this.game.currentRound.currentRoll)
-            }
+            };
+        }
+        await this.sendMessage({
+            message: holdValidation.reason,
+            embed: embed
         });
         return;
     }
@@ -280,54 +433,97 @@ Game.prototype.handleHoldCommand = async function(user, userID, args) {
         this.game.currentRound.currentRoll.splice(usedIndex - 1, 1);
     }
 
-    // render the next state so the user knows what they can do
+    // send info message
     var curPlayer = this.getCurrentPlayerObj();
-    var curUsername = this.getUsername(curPlayer.id);
     var potentialScore = this.game.currentRound.totalScore + curPlayer.totalScore;
     await this.sendMessage({
-        message: "<@" + curPlayer.id + "> held " + parsedHolds.length + " for a score of " + holdValidation.score + ". Their round total is now " + this.game.currentRound.totalScore + ", which would put them at " + potentialScore + " if they banked now.",
-        embed: {
-            title: "Remaining Dice",
-            fields: this.renderDice(this.game.currentRound.currentRoll)
+        message: "<@" + curPlayer.id + "> held " + parsedHolds.holdsList.length + " for a score of " +
+            holdValidation.score + ". Their round total is now "
+            + this.game.currentRound.totalScore + ", which would put them at " + potentialScore + " if they banked now."
+    });
+
+    if (parsedHolds.afterCommand && "roll" === parsedHolds.afterCommand) {
+        // immediately re-roll the dice
+        await this.handleRollCommand(user, userID, []);
+
+    } else if (parsedHolds.afterCommand && "bank" === parsedHolds.afterCommand) {
+        // immediately bank after holding
+        await this.handleBankCommand(user, userID, []);
+
+    } else {
+        // render the next state so the user knows what they can do
+        var embed;
+        var message;
+        if (this.game.currentRound.currentRoll && this.game.currentRound.currentRoll.length) {
+            embed = {
+                title: "Remaining Dice",
+                fields: this.renderDice(this.game.currentRound.currentRoll)
+            };
+        } else {
+            message = "All dice held, roll again or bank. Don't be a big puss and hold though.";
         }
-    })
+        await this.sendMessage({
+            message: message,
+            embed: embed
+        })
+    }
 };
 
 Game.prototype.parseHolds = function(argsArr) {
     var holdsArr = [];
-    for (var holdSetStr of argsArr) {
-        var holdSet = [];
-        var nums = holdSetStr.split("");
-        var currentDiceNum = this.game.currentRound.currentRoll.length;
+    var afterCommand = '';
 
-        if (!nums.length) {
-            return null;
-        }
+    while(argsArr && argsArr.length) {
+        var holdSetStr = argsArr.splice(0, 1)[0];
 
-        for (var num of nums) {
-            if (num < 1 || num > (currentDiceNum + 1)) {
+        var isNum = /^\d+$/.test(holdSetStr);
+        if (!isNum) {
+            // this is a command to be executed immediately after the hold
+            afterCommand = holdSetStr;
+        } else {
+            var holdSet = [];
+            var nums = holdSetStr.split("");
+            var currentDiceNum = this.game.currentRound.currentRoll.length;
+
+            if (!nums.length) {
                 return null;
             }
 
-            holdSet.push(+num);
+            for (var num of nums) {
+                if (num < 1 || num > (currentDiceNum + 1)) {
+                    return null;
+                }
+
+                holdSet.push(+num);
+            }
+            holdsArr.push(holdSet);
         }
-        holdsArr.push(holdSet);
     }
 
-    return holdsArr;
+    return {
+        holdsList: holdsArr,
+        afterCommand: afterCommand
+    };
 };
 
 Game.prototype.renderDice = function(diceArr) {
     var fieldsArr = [];
 
-    var i = 1;
-    for (var die of diceArr) {
-        var obj = diceMap[die];
+    if (!diceArr.length) {
         fieldsArr.push({
-            name: i++,
-            value: this.renderDiceValue(obj.letter, obj.colourType, obj.colourPrefix),
+            name: "None, roll again or bank!",
             inline: true
         })
+    } else {
+        var i = 1;
+        for (var die of diceArr) {
+            var obj = diceMap[die];
+            fieldsArr.push({
+                name: i++,
+                value: this.renderDiceValue(obj.letter, obj.colourType, obj.colourPrefix),
+                inline: true
+            })
+        }
     }
 
     return fieldsArr;
@@ -360,8 +556,18 @@ Game.prototype.updateRound = function(playerOrder) {
 Game.prototype.isGameRunning = function() {
     return this.game != null;
 }
+Game.prototype.getSpecifiedUsers = function(event) {
+    var specifiedUserIds = [];
+    if (event && event.d && event.d.mentions && event.d.mentions.length) {
+        for (var mention of event.d.mentions) {
+            specifiedUserIds.push(mention.id);
+        }
+    }
 
-Game.prototype.checkPreReqs = async function() {
+    return specifiedUserIds;
+};
+
+Game.prototype.checkPreReqs = async function(event) {
     // check that there is not a game already running
     if (this.isGameRunning()) {
         await this.sendMessage({
@@ -371,15 +577,15 @@ Game.prototype.checkPreReqs = async function() {
     }
 
     // check that there are at least two players
-    var activeUsers = this.getCurrentChannelActiveUsers();
-    if (!activeUsers || !activeUsers.length || activeUsers.length < 2) {
+    var activeUsers = this.getPlayersFromStartCommand((event));
+    if (!activeUsers || !activeUsers.length || activeUsers.length < 1) {
         // technically the game can work with one player, It'll just be really boring. Leaving this off to make it
         // easier to test
 
-        // await this.sendMessage({
-        //     message: 'Cannot start game with less than two players'
-        // });
-        // return false;
+        await this.sendMessage({
+            message: 'Cannot start game with less than one player'
+        });
+        return false;
     }
 
     return true;
@@ -387,9 +593,11 @@ Game.prototype.checkPreReqs = async function() {
 
 Game.prototype.getCurrentChannelActiveUsers = function() {
     var users = [];
-    for (var activeUser of Object.values(this.bot.users)) {
-        if (!activeUser.bot) {
-            users.push(activeUser);
+    var serverId = this.bot.channels[this.channelID].guild_id;
+    for (var member of Object.values(this.bot.servers[serverId].members)) {
+        var user = this.bot.users[member.id];
+        if (!user.bot && member.status && member.status !== 'offline' ) {
+            users.push(user);
         }
     }
 
@@ -416,8 +624,18 @@ Game.prototype.randomise = function(arr) {
     return array;
 };
 
-Game.prototype.handleInitCommand = async function(commandUser, commandUserID, commandArgs) {
-    if (!(await this.checkPreReqs())) {
+Game.prototype.getPlayersFromStartCommand = function(event) {
+    var activeUsers = this.getCurrentChannelActiveUsers();
+    var usersSpecified = this.getSpecifiedUsers(event);
+    if (usersSpecified && usersSpecified.length) {
+        activeUsers = activeUsers.filter(user => usersSpecified.indexOf(user.id) >= 0);
+    }
+
+    return activeUsers;
+};
+
+Game.prototype.handleInitCommand = async function(commandUser, commandUserID, commandArgs, event) {
+    if (!(await this.checkPreReqs(event))) {
         return;
     }
 
@@ -428,7 +646,7 @@ Game.prototype.handleInitCommand = async function(commandUser, commandUserID, co
 
     var playersStr = '';
     var order = 0;
-    var activePlayers = this.getCurrentChannelActiveUsers();
+    var activePlayers = this.getPlayersFromStartCommand(event);
     activePlayers = this.randomise(activePlayers);
     for (var activeUser of activePlayers) {
         this.game.players.push({
@@ -453,17 +671,21 @@ Game.prototype.checkPlayerTurn = function(userId) {
     return curPlayer.id === userId;
 };
 
-Game.prototype.getCurrentPlayerObj = function() {
-    var curOrder = this.game.currentRound.playerOrder;
-    var curPlayer;
+Game.prototype.getPlayerObjByOrder = function(order) {
+    var foundPlayer;
     for (var player of this.game.players) {
-        if (player.order === curOrder) {
-            curPlayer = player;
+        if (player.order === order) {
+            foundPlayer = player;
             break;
         }
     }
 
-    return curPlayer;
+    return foundPlayer;
+}
+
+Game.prototype.getCurrentPlayerObj = function() {
+    var curOrder = this.game.currentRound.playerOrder;
+    return this.getPlayerObjByOrder(curOrder);
 };
 
 Game.prototype.getCurrentPlayerUser = function() {
@@ -478,7 +700,7 @@ Game.prototype.checkGameRunning = function() {
 Game.prototype.doCommonChecks = async function(user, userID) {
     if (!this.checkGameRunning()) {
         await this.sendMessage({
-            message: "There is no game currently running, type !init to start a new game!"
+            message: "There is no game currently running, type !start to start a new game!"
         });
         return false;
     }
@@ -538,6 +760,23 @@ Game.prototype.containsSubset = function(sortedArr, sortedSubset) {
     return false;
 };
 
+Game.prototype.getDiceSetFromHoldSet = function(holdSet) {
+    // this is a hold set, so something like 123 or 5, each number refers to a dice index in the current roll
+    // need to convert it into a die set to evaluate value, also make sure the dice aren't being used multiple times
+
+    var usedIndices = [];
+    var diceSet = [];
+    for (var dieIndex of holdSet) {
+        usedIndices.push(dieIndex);
+        diceSet.push(this.game.currentRound.currentRoll[dieIndex - 1]);
+    }
+
+    return {
+        usedIndices: usedIndices,
+        diceSet: diceSet
+    }
+};
+
 Game.prototype.getValidatedHoldScore = function(holdDiceArr) {
     var usedIndices = [];
     var score = 0;
@@ -546,77 +785,29 @@ Game.prototype.getValidatedHoldScore = function(holdDiceArr) {
         // this is a hold set, so something like 123 or 5, each number refers to a dice index in the current roll
         // need to convert it into a die set to evaluate value, also make sure the dice aren't being used multiple times
 
-        var diceSet = [];
-        for (var dieIndex of holdDiceSet) {
-            if (usedIndices.indexOf(dieIndex) >= 0) {
+        var eval = this.getDiceSetFromHoldSet(holdDiceSet);
+
+        // check if a dice has been used more than once
+        for (var diceIndex of eval.usedIndices) {
+            if (usedIndices.indexOf(diceIndex) >= 0) {
                 // invalid, can only use a dice once
                 return {
                     score: 0,
-                    reason: 'Can only hold a dice once, tried to hold ' + die + ' multiple times'
+                    reason: 'Can only hold a dice once, tried to hold multiple times'
                 };
             }
-            usedIndices.push(dieIndex);
-            diceSet.push(this.game.currentRound.currentRoll[dieIndex - 1]);
+            usedIndices.push(diceIndex);
         }
 
         // need to check if the hold arr matches any scoring combos
-        var sorted = diceSet.sort();
-
-        // 6 of a kind
-        var unique = new Set(diceSet);
-        if (unique.size === 1 && sorted.length === 6) {
-            score += 5000;
-            continue;
+        var matchingScore = this.getDiceScore(eval.diceSet, true);
+        if (!matchingScore) {
+            score = 0;
+            reason = 'No valid scoring dice in one or more holds';
+            break;
+        } else {
+            score += matchingScore.score;
         }
-        // $GREED
-        if (this.containsSubset(sorted, [0, 1, 2, 3, 4, 5]) && sorted.length === 6) {
-            score += 1000;
-            continue;
-        }
-        // $$$
-        if (this.containsSubset(sorted, [0, 0, 0]) && sorted.length === 3) {
-            score += 600;
-            continue;
-        }
-        // GGG
-        if (this.containsSubset(sorted, [1, 1, 1]) && sorted.length === 3) {
-            score += 500;
-            continue;
-        }
-        // RRR
-        if (this.containsSubset(sorted, [2, 2, 2]) && sorted.length === 3) {
-            score += 400;
-            continue;
-        }
-        // E1E1E1
-        if (this.containsSubset(sorted, [3, 3, 3]) && sorted.length === 3) {
-            score += 300;
-            continue;
-        }
-        // E2E2E2
-        if (this.containsSubset(sorted, [4, 4, 4]) && sorted.length === 3) {
-            score += 300;
-            continue;
-        }
-        // DDDD
-        if (this.containsSubset(sorted, [5, 5, 5, 5]) && sorted.length === 4) {
-            score += 400;
-            continue;
-        }
-        // D
-        if (sorted.indexOf(5) >= 0 && sorted.length === 1) {
-            score += 100;
-            continue;
-        }
-        // G
-        if (sorted.indexOf(1) >= 0 && sorted.length === 1) {
-            score += 50;
-            continue;
-        }
-
-        score = 0;
-        reason = 'No valid scoring dice in one or more holds';
-        break;
     }
 
     return {
@@ -626,55 +817,53 @@ Game.prototype.getValidatedHoldScore = function(holdDiceArr) {
     };
 };
 
-
-
-Game.prototype.isAnyScoringDice = function(diceArr) {
+Game.prototype.getDiceScore = function(diceArr, validateLength) {
     // need to check if the dice arr matches any scoring combos - this could be tricky
-    var sorted = diceArr.sort();
+    var sorted = diceArr.slice().sort();
 
     // 6 of a kind
-    var unique = new Set(diceArr);
-    if (unique.size === 1 && diceArr.length === 6) {
-        return true;
+    var unique = new Set(sorted);
+    if (unique.size === 1 && sorted.length === 6) {
+        return scoreList[0];
     }
     // $GREED
-    if (this.containsSubset(sorted, [0, 1, 2, 3, 4, 5])) {
-        return true;
+    if (this.containsSubset(sorted, [0, 1, 2, 3, 4, 5]) && (!validateLength || sorted.length === 6)) {
+        // sort greed so it looks nice and is easier to identify
+        diceArr.sort();
+        return scoreList[1];
     }
     // $$$
-    if (this.containsSubset(sorted, [0, 0, 0])) {
-        return true;
+    if (this.containsSubset(sorted, [0, 0, 0]) && (!validateLength || sorted.length === 3)) {
+        return scoreList[2];
     }
     // GGG
-    if (this.containsSubset(sorted, [1, 1, 1])) {
-        return true;
+    if (this.containsSubset(sorted, [1, 1, 1]) && (!validateLength || sorted.length === 3)) {
+        return scoreList[3];
     }
     // RRR
-    if (this.containsSubset(sorted, [2, 2, 2])) {
-        return true;
+    if (this.containsSubset(sorted, [2, 2, 2]) && (!validateLength || sorted.length === 3)) {
+        return scoreList[4];
     }
     // E1E1E1
-    if (this.containsSubset(sorted, [3, 3, 3])) {
-        return true;
+    if (this.containsSubset(sorted, [3, 3, 3]) && (!validateLength || sorted.length === 3)) {
+        return scoreList[5];
     }
     // E2E2E2
-    if (this.containsSubset(sorted, [4, 4, 4])) {
-        return true;
+    if (this.containsSubset(sorted, [4, 4, 4]) && (!validateLength || sorted.length === 3)) {
+        return scoreList[6];
     }
     // DDDD
-    if (this.containsSubset(sorted, [5, 5, 5, 5])) {
-        return true;
+    if (this.containsSubset(sorted, [5, 5, 5, 5]) && (!validateLength || sorted.length === 4)) {
+        return scoreList[7];
     }
     // D
-    if (sorted.indexOf(5) >= 0) {
-        return true;
+    if (sorted.indexOf(5) >= 0 && (!validateLength || sorted.length === 1)) {
+        return scoreList[8];
     }
     // G
-    if (sorted.indexOf(1) >= 0) {
-        return true;
+    if (sorted.indexOf(1) >= 0 && (!validateLength || sorted.length === 1)) {
+        return scoreList[9];
     }
-
-    return false;
 };
 
 Game.prototype.handleRollCommand = async function(user, userID, args) {
@@ -695,17 +884,27 @@ Game.prototype.handleRollCommand = async function(user, userID, args) {
         round.currentDice = 6;
     }
 
+    var hadRolled = round.hasRolled;
+
     var dice = this.rollDice(round.currentDice);
     round.currentRoll = dice;
     round.hasRolled = true;
     round.hasHeld = false;
 
-    var anyScoringDice = this.isAnyScoringDice(dice);
+    var anyScoringDice = this.getDiceScore(dice, false);
 
     var curUser = this.getCurrentPlayerUser();
     var message = "<@" + curUser.id + "> rolled";
     if (!anyScoringDice) {
-        message += "\nOh no, that's a bust! Don't be so greedy next time...";
+        if (!hadRolled) {
+            message += "\nOh no, that's a bust! Wow, you're terrible at this game...";
+
+        } else if (round.totalScore < this.firstScoreThreshold) {
+            message += "\nOh no, that's a bust! Hate to not break 500 in one roll...";
+
+        } else {
+            message += "\nOh no, that's a bust! Don't be so greedy next time...";
+        }
     }
 
     var fields = this.renderDice(dice);
@@ -762,30 +961,47 @@ Game.prototype.getGameWinnerStats = function() {
     return maxPlayers;
 };
 
+Game.prototype.getNextPlayerId = function() {
+    var order = this.getNextPlayerOrder();
+    return this.getPlayerObjByOrder(order).id;
+};
+
+Game.prototype.getWinnerIds = function(gameWinnerStats) {
+    return gameWinnerStats.map(player => player.id);
+}
+
+Game.prototype.updateLeaderBoards = function(gameWinnerStats) {
+    var winnerIds = this.getWinnerIds(gameWinnerStats);
+    for (var player of this.game.players) {
+        var wasWinner = winnerIds.indexOf(player.id) >= 0;
+        this.updatePlayerLeaderBoard(player, wasWinner);
+    }
+    this.leaderBoardStats.totalGamesPlayed++;
+};
+
 Game.prototype.checkGameFinished = async function() {
     var isFinished = false;
 
     // game is finished if we have come back around to the player who first tripped the threshold
-    var scoreThreshold = 5000; // TODO make this config
     var currPlayer = this.getCurrentPlayerObj();
-    if (currPlayer.totalScore >= scoreThreshold) {
+    if (currPlayer.totalScore >= this.maxScoreThreshold && !this.game.thresholdBreach) {
         this.game.thresholdBreach = true;
-        if (!this.game.thresholdBreachUserId) {
-            this.game.thresholdBreachUserId = currPlayer.id;
+        this.game.thresholdBreachUserId = currPlayer.id;
 
-            // send a warning message that there is one round left until the end
-            var curUserName = this.getUsername(currPlayer.id);
-            await this.sendMessage({
-                message: "<@" + currPlayer.id + "> has reached the maximum score of " + scoreThreshold + ". Each player will have one more round to beat their score, then the game is over!"
-            });
-        } else if (this.game.thresholdBreachUserId === currPlayer.id) {
-            // have come back around to the user who tripped the threshold, so it's over
-            isFinished = true;
-        }
+        // send a warning message that there is one round left until the end
+        await this.sendMessage({
+            message: "<@" + currPlayer.id + "> has reached the maximum score of " + this.maxScoreThreshold + ". Each player will have one more round to beat their score, then the game is over!"
+        });
+    } else if (this.game.thresholdBreach && this.game.thresholdBreachUserId === this.getNextPlayerId()) {
+        // have come back around to the user who tripped the threshold, so it's over
+        isFinished = true;
     }
 
     if (isFinished) {
         var gameWinnerStats = this.getGameWinnerStats();
+        // update leaderboards
+        this.updateLeaderBoards(gameWinnerStats);
+
         var message = '';
         if (gameWinnerStats.length > 1) {
             var playernames = "<@" + gameWinnerStats[0].id + ">";
@@ -799,6 +1015,10 @@ Game.prototype.checkGameFinished = async function() {
             message = "Congrats <@" + gameWinnerStats[0].id + ">! You won with " + gameWinnerStats[0].totalScore + " points!";
         }
 
+        // print final scores
+        message += "\nThe final tally was:\n";
+        message += this.printScores();
+
         await this.sendMessage({
             message: message
         });
@@ -806,7 +1026,7 @@ Game.prototype.checkGameFinished = async function() {
     }
 
     return isFinished;
-}
+};
 
 Game.prototype.bankCurrentScore = function() {
     var currPlayer = this.getCurrentPlayerObj();
@@ -844,7 +1064,7 @@ Game.prototype.sendMessage = async function(options) {
             if (!error) {
                 resolve();
             } else {
-                reject();
+                reject(error);
             }
         });
     });

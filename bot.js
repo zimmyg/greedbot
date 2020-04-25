@@ -44,7 +44,10 @@ var handleMessage = async function(user, userID, channelID, message, event) {
 
     } else if (channel) {
         // channel already exists, just pass through to it
-        await channel.handleMessage(user, userID, message, event);
+        await channel.handleMessage(user, userID, message, event)
+            .catch(error => {
+                console.log(error);
+        });
 
     } else {
         // must have been an error or for someone else, ignore
